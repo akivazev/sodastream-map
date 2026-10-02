@@ -2,6 +2,7 @@
   'use strict';
 
   var PAGE_SIZE = 30;
+  var RADII = [0, 1, 3, 10, 25]; // km; 0 = no limit
   var IS_ANDROID = /Android/i.test(navigator.userAgent);
 
   var STRINGS = {
@@ -23,6 +24,9 @@
       fromYou: 'ממוינות לפי מרחק ממך · {n} נקודות',
       fromPoint: 'ממוינות לפי מרחק מהנקודה שנבחרה · {n} נקודות',
       none: 'לא נמצאו נקודות',
+      noneRadius: 'אין נקודות בטווח {n} ק״מ. נסו טווח גדול יותר.',
+      range: 'טווח:',
+      all: 'הכל',
       m: 'מ׳',
       km: 'ק״מ',
       you: 'המיקום שלך',
@@ -46,6 +50,9 @@
       fromYou: 'Sorted by distance from you · {n} locations',
       fromPoint: 'Sorted by distance from the picked point · {n} locations',
       none: 'No locations found',
+      noneRadius: 'No locations within {n} km. Try a larger range.',
+      range: 'Range:',
+      all: 'All',
       m: 'm',
       km: 'km',
       you: 'Your location',
@@ -58,6 +65,7 @@
     stores: [],
     origin: null,          // {lat, lng, kind: 'gps' | 'picked'}
     query: '',
+    radius: Number(load('radius')) || 0,
     shown: PAGE_SIZE,
     selectedId: null,
     loadError: false
@@ -68,6 +76,7 @@
   var statusEl = $('status');
   var moreEl = $('more');
   var searchEl = $('search');
+  var radiusEl = $('radius');
 
   function load(key) {
     try { return localStorage.getItem('sodamap.' + key); } catch (e) { return null; }
@@ -93,6 +102,7 @@
   var renderer = L.canvas({ padding: 0.5 });
   var markers = {};
   var originMarker = null;
+  var radiusCircle = null;
 
   map.on('click', function (e) {
     setOrigin(e.latlng.lat, e.latlng.lng, 'picked', false);
@@ -147,6 +157,9 @@
     });
     if (state.origin) {
       out.forEach(function (s) { s.dist = haversine(state.origin, s); });
+      if (state.radius) {
+        out = out.filter(function (s) { return s.dist <= state.radius * 1000; });
+      }
       out.sort(function (a, b) { return a.dist - b.dist; });
     } else {
       out.sort(function (a, b) { return a.address.localeCompare(b.address, 'he'); });
@@ -163,7 +176,7 @@
     } else if (!state.stores.length) {
       statusEl.textContent = t('loading');
     } else if (!items.length) {
-      statusEl.textContent = t('none');
+      statusEl.textContent = state.origin && state.radius ? t('noneRadius', state.radius) : t('none');
     } else if (state.origin) {
       statusEl.textContent = t(state.origin.kind === 'gps' ? 'fromYou' : 'fromPoint', items.length);
     } else {
@@ -179,13 +192,42 @@
     }).join('');
     moreEl.hidden = items.length <= state.shown;
 
-    // Dim markers that don't match the text filter.
+    renderRadius();
+
+    // Dim markers that are filtered out.
     var match = {};
     items.forEach(function (s) { match[s.id] = true; });
     state.stores.forEach(function (s) {
       var on = !!match[s.id];
       markers[s.id].setStyle({ opacity: on ? 1 : 0.15, fillOpacity: on ? 0.85 : 0.1 });
     });
+  }
+
+  function renderRadius() {
+    var html = '<span>' + esc(t('range')) + '</span>' + RADII.map(function (km) {
+      return '<button type="button" class="chip-r' + (km === state.radius ? ' on' : '') + '" data-km="' + km + '"' +
+        (state.origin ? '' : ' disabled') + ' aria-pressed="' + (km === state.radius) + '">' +
+        (km ? km + ' ' + esc(t('km')) : esc(t('all'))) + '</button>';
+    }).join('');
+    if (radiusEl.innerHTML !== html) radiusEl.innerHTML = html;
+
+    if (radiusCircle) { radiusCircle.remove(); radiusCircle = null; }
+    if (state.origin && state.radius) {
+      radiusCircle = L.circle([state.origin.lat, state.origin.lng], {
+        radius: state.radius * 1000, color: '#d93025', weight: 1.5, fillOpacity: 0.04, interactive: false
+      }).addTo(map);
+    }
+  }
+
+  function fitToOrigin() {
+    if (!state.origin) return;
+    if (radiusCircle) {
+      map.fitBounds(radiusCircle.getBounds(), { padding: [10, 10] });
+      return;
+    }
+    var near = filtered().slice(0, 5).map(function (s) { return [s.lat, s.lng]; });
+    near.push([state.origin.lat, state.origin.lng]);
+    map.fitBounds(near, { padding: [30, 30], maxZoom: 15 });
   }
 
   function popupHtml(s) {
@@ -216,11 +258,7 @@
       radius: 9, color: '#ffffff', weight: 3, fillColor: '#d93025', fillOpacity: 1
     }).bindTooltip(label).addTo(map);
     render();
-    if (fit) {
-      var near = filtered().slice(0, 5).map(function (s) { return [s.lat, s.lng]; });
-      near.push([lat, lng]);
-      map.fitBounds(near, { padding: [30, 30], maxZoom: 15 });
-    }
+    if (fit) fitToOrigin();
     $('list').parentElement.scrollTop = 0;
   }
 
@@ -266,6 +304,15 @@
     state.query = searchEl.value;
     state.shown = PAGE_SIZE;
     render();
+  });
+  radiusEl.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    state.radius = Number(b.getAttribute('data-km'));
+    state.shown = PAGE_SIZE;
+    save('radius', String(state.radius));
+    render();
+    fitToOrigin();
   });
   moreEl.addEventListener('click', function () {
     state.shown += PAGE_SIZE;

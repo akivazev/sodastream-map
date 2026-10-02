@@ -103,6 +103,18 @@ input[type="search"] {
   background: var(--bg);
   color: var(--text);
 }
+.radius { display: flex; flex-wrap: nowrap; overflow-x: auto; align-items: center; gap: 5px; white-space: nowrap; font-size: 0.85rem; color: var(--muted); }
+.chip-r {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.85rem;
+  flex: none;
+}
+.chip-r.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.chip-r:disabled { opacity: 0.45; cursor: default; }
 .status { margin: 0; font-size: 0.85rem; color: var(--muted); min-height: 1.2em; }
 
 .list { list-style: none; margin: 0; padding: 0; }
@@ -141,3 +153,7 @@ input[type="search"] {
 
 .leaflet-popup-content { font: 14px/1.4 system-ui, sans-serif; }
 .leaflet-popup-content .actions a { font-size: 0.8rem; }
+
+@media (max-width: 380px) {
+  .radius > span { display: none; }
+}
